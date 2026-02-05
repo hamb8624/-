@@ -84,11 +84,20 @@ export default function Home() {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
         });
+        setError(''); // Clear error on success
       },
       (err) => {
-        setError(`GPS Error: ${err.message}`);
+        // Detailed error for debugging
+        let msg = `GPS Error (${err.code}): ${err.message}`;
+        if (err.code === 1) msg = "Location Access Denied. Please allow in settings.";
+        if (err.code === 3) msg = "GPS Timeout. Moving to open area may help.";
+        setError(msg);
       },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+      {
+        enableHighAccuracy: false, // Priority: Get ANY location over precise location
+        maximumAge: 0,
+        timeout: 20000 // 20 seconds timeout
+      }
     );
 
     // Compass
