@@ -18,18 +18,55 @@ export default function Home() {
   const [log, setLog] = useState<string[]>([]);
   const [isClient, setIsClient] = useState(false);
 
+  // Smoothing state
+  const headingRef = useRef<number | null>(null);
+
   // Audio State
   const [audioStarted, setAudioStarted] = useState(false);
   const audioRef = useRef<AudioEngine | null>(null);
+
+  // Animation Frame for smooth UI updates
+  const requestRef = useRef<number>(0);
 
   useEffect(() => {
     setIsClient(true);
     // Initialize Audio Engine singleton
     audioRef.current = AudioEngine.getInstance((msg) => addLog(msg));
+
+    // Start Animation Loop for smoothing
+    const animate = () => {
+      if (headingRef.current !== null) {
+        setHeading(prev => {
+          if (prev === null) return headingRef.current;
+
+          // Smooth interpolation (Lerp)
+          // We need to handle the wrap-around (0 <-> 360)
+          let diff = headingRef.current! - prev;
+
+          // Shortest path logic
+          while (diff < -180) diff += 360;
+          while (diff > 180) diff -= 360;
+
+          // Lerp factor: 0.1 (very smooth) to 0.5 (responsive)
+          // If diff is huge (first load), jump directly.
+          if (Math.abs(diff) > 100) return headingRef.current; // Jump
+
+          let next = prev + diff * 0.15; // Smooth factor
+
+          // Normalize result 0-360
+          return (next + 360) % 360;
+        });
+      }
+      requestRef.current = requestAnimationFrame(animate);
+    };
+    requestRef.current = requestAnimationFrame(animate);
+
+    return () => cancelAnimationFrame(requestRef.current);
   }, []);
 
   const addLog = (msg: string) => {
-    setLog(prev => [msg, ...prev].slice(0, 5));
+    // Suppress logs to avoid clutter during smooth mode
+    // setLog(prev => [msg, ...prev].slice(0, 5));
   };
 
   const calculateBearing = (startLat: number, startLon: number, destLat: number, destLon: number) => {
@@ -60,7 +97,7 @@ export default function Home() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const response = await (DeviceOrientationEvent as any).requestPermission();
         if (response === 'granted') {
-          addLog('Sensor Permission granted');
+          // addLog('Sensor Permission granted');
           setPermissionGranted(true);
         } else {
           setError('Sensor Permission denied');
@@ -69,7 +106,7 @@ export default function Home() {
         setError(e instanceof Error ? e.message : String(e));
       }
     } else {
-      addLog('Permission auto-granted (Android/Desktop)');
+      // addLog('Permission auto-granted (Android/Desktop)');
       setPermissionGranted(true);
     }
   };
@@ -113,20 +150,13 @@ export default function Home() {
         headingValue = 360 - event.alpha;
       }
 
-      setHeading(headingValue);
+      // Store raw value for smoothing loop
+      headingRef.current = headingValue;
 
-      // Update Audio Engine
-      if (coords && audioRef.current && headingValue !== null) {
-        const targetBearing = calculateBearing(
-          coords.latitude,
-          coords.longitude,
-          TARGET_LAT,
-          TARGET_LON
-        );
-        // Calculate roughly distance (very simple approx for volume check if needed later)
-        // For now, just pass 1000m to ignore distance attenuation in logic or handle strictly directional
-        audioRef.current.update(headingValue, targetBearing, 1000);
-      }
+      // Update Audio Engine (using the RAW value is fine, but audio also benefits from smooth updates relative to head.
+      // Actually, for audio physics, updating on every frame (in the loop) is better.
+      // But for MVP, let's keep audio update here or move to animate loop?
+      // Let's move Audio Update to the animation loop if coords exist.
     };
 
     window.addEventListener('deviceorientation', handleOrientation, true);
@@ -135,7 +165,20 @@ export default function Home() {
       navigator.geolocation.clearWatch(geoId);
       window.removeEventListener('deviceorientation', handleOrientation, true);
     };
-  }, [permissionGranted, coords]);
+  }, [permissionGranted]);
+
+  // Sync Audio in Loop (Pseudo-effect: we use a separate effect that depends on `heading` state which is now smooth)
+  useEffect(() => {
+    if (coords && audioRef.current && heading !== null) {
+      const targetBearing = calculateBearing(
+        coords.latitude,
+        coords.longitude,
+        TARGET_LAT,
+        TARGET_LON
+      );
+      audioRef.current.update(heading, targetBearing, 1000);
+    }
+  }, [heading, coords]);
 
   if (!isClient) return <div className="min-h-screen bg-black" />;
 
