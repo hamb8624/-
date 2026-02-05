@@ -39,29 +39,49 @@ export class AudioEngine {
         if (this.isPlaying) return;
 
         try {
-            // Create Oscillator (Drone sound)
-            this.oscillator = this.context.createOscillator();
-            this.oscillator.type = 'sine'; // deeply resonant sine wave
-            this.oscillator.frequency.setValueAtTime(440, this.context.currentTime); // A4
+            // FM Synthesis for "Bell-like" or "Wind" texture
+            // Carrier: The main pitch (High, clear)
+            const carrier = this.context.createOscillator();
+            carrier.type = 'sine';
+            carrier.frequency.setValueAtTime(880, this.context.currentTime); // A5
 
-            // Create Gain (Volume)
+            // Modulator: Creates the metallic/wobbly texture
+            const modulator = this.context.createOscillator();
+            modulator.type = 'sine';
+            modulator.frequency.setValueAtTime(12, this.context.currentTime); // Slow wobbling (Wind chime feel)
+
+            // Modulator Gain: Depth of the wobble
+            const modGain = this.context.createGain();
+            modGain.gain.setValueAtTime(200, this.context.currentTime);
+
+            // Output Volume (Master Gain)
             this.gainNode = this.context.createGain();
             this.gainNode.gain.setValueAtTime(0, this.context.currentTime); // Start silent
 
-            // Create Panner (Stereo)
+            // Panner (Stereo)
             this.pannerNode = this.context.createStereoPanner();
 
-            // Connect: Osc -> Gain -> Panner -> Destination
-            this.oscillator.connect(this.gainNode);
+            // Connections: Mod -> ModGain -> Carrier.frequency
+            modulator.connect(modGain);
+            modGain.connect(carrier.frequency);
+
+            // Carrier -> MasterGain -> Panner -> Out
+            carrier.connect(this.gainNode);
             this.gainNode.connect(this.pannerNode);
             this.pannerNode.connect(this.context.destination);
 
-            this.oscillator.start();
-            this.isPlaying = true;
-            this.debugLog('Audio: Started (Synth)');
+            // Start everything
+            carrier.start();
+            modulator.start();
 
-            // Fade in slightly
-            this.gainNode.gain.linearRampToValueAtTime(0.1, this.context.currentTime + 1);
+            // Store for updates (we update carrier frequency primarily)
+            this.oscillator = carrier; // Keep reference to change pitch if needed
+
+            this.isPlaying = true;
+            this.debugLog('Audio: Started (Wind Chime)');
+
+            // Fade in
+            this.gainNode.gain.linearRampToValueAtTime(0.1, this.context.currentTime + 2);
 
         } catch (e) {
             this.debugLog(`Audio Start Error: ${e}`);
