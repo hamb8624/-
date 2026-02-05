@@ -1,10 +1,7 @@
 export class AudioEngine {
     private static instance: AudioEngine;
     private context: AudioContext | null = null;
-    private oscillator: OscillatorNode | null = null;
-    private gainNode: GainNode | null = null;
-    private pannerNode: StereoPannerNode | null = null;
-    private isPlaying: boolean = false;
+    private lastTriggerTime: number = 0;
     private debugLog: (msg: string) => void;
 
     private constructor(logFunc: (msg: string) => void) {
@@ -31,65 +28,48 @@ export class AudioEngine {
     public start() {
         if (!this.context) this.init();
         if (!this.context) return;
-
         if (this.context.state === 'suspended') {
             this.context.resume();
         }
+        this.debugLog('Audio: Ready (Sparkle Mode)');
+    }
 
-        if (this.isPlaying) return;
+    private playSparkle() {
+        if (!this.context) return;
 
-        try {
-            // FM Synthesis for "Bell-like" or "Wind" texture
-            // Carrier: The main pitch (High, clear)
-            const carrier = this.context.createOscillator();
-            carrier.type = 'sine';
-            carrier.frequency.setValueAtTime(880, this.context.currentTime); // A5
+        const now = this.context.currentTime;
 
-            // Modulator: Creates the metallic/wobbly texture
-            const modulator = this.context.createOscillator();
-            modulator.type = 'sine';
-            modulator.frequency.setValueAtTime(12, this.context.currentTime); // Slow wobbling (Wind chime feel)
+        // Create 2 tones for "Ki-Ran" effect
+        // Tone 1: High
+        const osc1 = this.context.createOscillator();
+        const gain1 = this.context.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(1200, now);
+        osc1.frequency.exponentialRampToValueAtTime(2000, now + 0.1);
+        gain1.gain.setValueAtTime(0.1, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
 
-            // Modulator Gain: Depth of the wobble
-            const modGain = this.context.createGain();
-            modGain.gain.setValueAtTime(200, this.context.currentTime);
+        // Tone 2: Higher (slightly delayed)
+        const osc2 = this.context.createOscillator();
+        const gain2 = this.context.createGain();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(1800, now + 0.1);
+        osc2.frequency.exponentialRampToValueAtTime(3000, now + 0.2);
+        gain2.gain.setValueAtTime(0, now);
+        gain2.gain.setValueAtTime(0.08, now + 0.1);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
 
-            // Output Volume (Master Gain)
-            this.gainNode = this.context.createGain();
-            this.gainNode.gain.setValueAtTime(0, this.context.currentTime); // Start silent
+        osc1.connect(gain1).connect(this.context.destination);
+        osc2.connect(gain2).connect(this.context.destination);
 
-            // Panner (Stereo)
-            this.pannerNode = this.context.createStereoPanner();
-
-            // Connections: Mod -> ModGain -> Carrier.frequency
-            modulator.connect(modGain);
-            modGain.connect(carrier.frequency);
-
-            // Carrier -> MasterGain -> Panner -> Out
-            carrier.connect(this.gainNode);
-            this.gainNode.connect(this.pannerNode);
-            this.pannerNode.connect(this.context.destination);
-
-            // Start everything
-            carrier.start();
-            modulator.start();
-
-            // Store for updates (we update carrier frequency primarily)
-            this.oscillator = carrier; // Keep reference to change pitch if needed
-
-            this.isPlaying = true;
-            this.debugLog('Audio: Started (Wind Chime)');
-
-            // Fade in
-            this.gainNode.gain.linearRampToValueAtTime(0.1, this.context.currentTime + 2);
-
-        } catch (e) {
-            this.debugLog(`Audio Start Error: ${e}`);
-        }
+        osc1.start(now);
+        osc1.stop(now + 0.5);
+        osc2.start(now + 0.1);
+        osc2.stop(now + 0.6);
     }
 
     public update(heading: number, targetBearing: number, distance: number) {
-        if (!this.context || !this.gainNode || !this.pannerNode || !this.oscillator) return;
+        if (!this.context) return;
 
         let diff = targetBearing - heading;
         while (diff < -180) diff += 360;
@@ -97,27 +77,15 @@ export class AudioEngine {
 
         const absDiff = Math.abs(diff);
 
-        // Volume Logic: Louder when facing target
-        // Max Volume: 0.5, Min Volume: 0.05
-        let targetVolume = 0.05;
-        if (absDiff < 45) {
-            targetVolume = 0.5 - (absDiff / 45) * 0.45;
+        // Trigger logic: If within 15 degrees
+        if (absDiff < 15) {
+            const now = Date.now();
+            // Cooldown: 2 seconds
+            if (now - this.lastTriggerTime > 2000) {
+                this.playSparkle();
+                this.lastTriggerTime = now;
+                // Optional: visual feedback trigger could be sent back via callback if needed
+            }
         }
-
-        // Smooth transition
-        this.gainNode.gain.setTargetAtTime(targetVolume, this.context.currentTime, 0.1);
-
-        // Pitch modulation based on accuracy (optional, adds "game" feel)
-        // Higher pitch when closer/more accurate? 
-        // Let's keep pitch steady for now, maybe slight vibrato if accurate.
-        if (absDiff < 10) {
-            this.oscillator.frequency.setTargetAtTime(880, this.context.currentTime, 0.2); // Octave up when locked on
-        } else {
-            this.oscillator.frequency.setTargetAtTime(440, this.context.currentTime, 0.5);
-        }
-
-        // Pan Logic
-        const pan = Math.max(-1.0, Math.min(1.0, diff / 90));
-        this.pannerNode.pan.setTargetAtTime(pan, this.context.currentTime, 0.1);
     }
 }
