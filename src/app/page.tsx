@@ -140,111 +140,134 @@ export default function Home() {
   if (!isClient) return <div className="min-h-screen bg-black" />;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-6 font-mono text-center select-none overflow-hidden touch-none">
-      {/* Background Ambience */}
-      <div className="fixed inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black -z-10" />
+    <div className="flex flex-col items-center justify-center min-h-screen bg-[#050505] text-[#e0e0e0] overflow-hidden select-none touch-none">
 
-      <h1 className="text-xl font-bold tracking-[0.3em] text-emerald-500/80 mb-12 uppercase">
-        Beppu / Namonaki
-      </h1>
+      {/* Background Texture (Subtle Noise) */}
+      <div className="fixed inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay"
+        style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}>
+      </div>
+
+      {/* Title - Vertical Text */}
+      <div className="absolute top-8 right-8 writing-vertical-rl text-xs tracking-[0.5em] text-gray-500 font-serif opacity-80">
+        別府・名もなき社
+      </div>
 
       {!permissionGranted ? (
-        <div className="space-y-6">
-          <p className="text-gray-400 text-sm max-w-[200px] mx-auto leading-relaxed">
-            Connect your senses to the city.<br />
-            <span className="text-xs text-gray-600 mt-2 block">Audio / Location / Orientation</span>
-          </p>
+        <div className="z-10 flex flex-col items-center space-y-12 animate-fade-in-up">
+          <div className="space-y-4 text-center">
+            <p className="text-sm font-serif tracking-[0.2em] leading-loose text-gray-300">
+              街の気配に耳を澄ます<br />
+              地図なき参拝へ
+            </p>
+          </div>
+
           <button
             onClick={requestPermission}
-            className="px-8 py-3 bg-emerald-900/30 text-emerald-400 border border-emerald-800/50 rounded-full hover:bg-emerald-900/50 hover:border-emerald-500 transition-all duration-500 tracking-widest text-xs uppercase"
+            className="group relative px-8 py-4 overflow-hidden border border-white/10 rounded-sm transition-all duration-700 hover:border-white/30"
           >
-            Initiate Connection
+            <span className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700 blur-xl" />
+            <span className="relative text-xs tracking-[0.4em] font-serif group-hover:text-white transition-colors">
+              接続ノ儀
+            </span>
           </button>
         </div>
       ) : (
-        <div className="space-y-8 w-full max-w-xs relative z-10">
-          {/* Compass Visual */}
-          <div className="relative w-64 h-64 mx-auto mb-8 flex items-center justify-center">
-            {/* Outer Ring */}
-            <div className="absolute inset-0 border border-gray-800 rounded-full opacity-50" />
-            <div className="absolute inset-[10%] border border-gray-800/50 rounded-full opacity-30 border-dashed" />
+        <div className="relative w-full h-full flex flex-col items-center justify-center">
 
-            {/* Direction Indicator */}
+          {/* Main Compass Area */}
+          <div className="relative w-[80vw] h-[80vw] max-w-[400px] max-h-[400px] flex items-center justify-center">
+
+            {/* Outer Subtle Ring */}
+            <div className="absolute inset-0 border border-white/5 rounded-full scale-90 opacity-30" />
+            <div className="absolute inset-0 border border-white/5 rounded-full scale-[0.85] opacity-10" />
+
+            {/* Rotating Layer (The World rotates around the user) */}
             {heading !== null ? (
-              <>
-                <div
-                  className="absolute w-full h-[1px] bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent"
-                  style={{ transform: `rotate(${-heading}deg)` }}
-                />
-                <div
-                  className="absolute w-[1px] h-full bg-gradient-to-b from-emerald-500 to-transparent opacity-50"
-                  style={{ transform: `rotate(${-heading}deg)`, transformOrigin: 'center bottom', top: '50%', height: '50%' }}
-                >
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full absolute -top-1 -left-[3px] shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+              <div
+                className="absolute inset-0 transition-transform duration-700 ease-out will-change-transform"
+                style={{ transform: `rotate(${-heading}deg)` }}
+              >
+                {/* North Marker */}
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center space-y-2">
+                  <div className="w-[1px] h-4 bg-gradient-to-b from-white/50 to-transparent" />
+                  <span className="text-[10px] font-serif text-white/40">北</span>
                 </div>
 
-                <div className="text-4xl font-thin text-white tracking-tighter">
-                  {heading.toFixed(0)}<span className="text-sm text-gray-500 ml-1">DEG</span>
+                {/* East */}
+                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                  <span className="text-[8px] opacity-20">東</span>
+                </div>
+                {/* West */}
+                <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                  <span className="text-[8px] opacity-20">西</span>
+                </div>
+                {/* South */}
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+                  <span className="text-[8px] opacity-20">南</span>
                 </div>
 
-                {/* Audio Status Indicator */}
-                <div className="absolute bottom-10 left-1/2 -translate-x-1/2">
-                  {audioStarted ? (
-                    <div className="flex gap-1">
-                      <span className="w-1 h-3 bg-emerald-500 animate-[pulse_1s_ease-in-out_infinite]" />
-                      <span className="w-1 h-2 bg-emerald-500 animate-[pulse_1.5s_ease-in-out_infinite]" />
-                      <span className="w-1 h-4 bg-emerald-500 animate-[pulse_0.8s_ease-in-out_infinite]" />
-                    </div>
-                  ) : (
-                    <span className="text-[9px] text-gray-600">MUTE</span>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="animate-pulse text-gray-600 text-xs">CALIBRATING</div>
-            )}
+                {/* Target Ghost/Spirit (Only appears if close or generally for direction) */}
+                {/* We can place an indicator at the target's relative angle? 
+                        The current structure rotates the whole 'compass' so North is always North relative to screen if screen was map.
+                        Actually, typical compass UI: 
+                        - 'N' mark rotates according to -heading. 
+                        - If Target is at North East, and I face North East, Target should be at TOP.
+                        
+                        Wait, let's keep it simple abstract.
+                        Center line is "User's Forward".
+                        If we rotate the compass by -heading, then 'N' is where North is.
+                    */}
 
-            {/* Static Markers */}
-            <div className="absolute top-2 text-[10px] text-gray-600">N</div>
-            <div className="absolute bottom-2 text-[10px] text-gray-600">S</div>
-            <div className="absolute left-2 text-[10px] text-gray-600">W</div>
-            <div className="absolute right-2 text-[10px] text-gray-600">E</div>
+              </div>
+            ) : null}
+
+            {/* Center User/Spirit */}
+            <div className="relative z-20">
+              <div className={`w-3 h-3 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.5)] transition-opacity duration-1000 ${audioStarted ? 'opacity-80 animate-pulse' : 'opacity-20'}`} />
+              {audioStarted && (
+                <div className="absolute inset-0 w-3 h-3 border border-white rounded-full animate-ping opacity-20 duration-[3000ms]" />
+              )}
+            </div>
+
+            {/* Forward Indicator (User is always facing UP on screen) */}
+            <div className="absolute top-[15%] left-1/2 -translate-x-1/2 w-[1px] h-12 bg-gradient-to-t from-white/20 to-transparent" />
+
           </div>
 
-          <div className="grid grid-cols-2 gap-4 text-xs text-gray-400">
-            <div className="border border-white/5 p-3 rounded bg-white/5 backdrop-blur-sm">
-              <div className="uppercase tracking-widest text-[9px] text-gray-600 mb-1">LAT</div>
-              {coords ? coords.latitude.toFixed(5) : '---'}
+          {/* Status Text */}
+          <div className="absolute bottom-16 text-center space-y-2 animate-fade-in">
+            <div className="text-[10px] tracking-[0.2em] text-gray-600 font-serif">
+              {audioStarted ? "気配ヲ追エ" : "静寂"}
             </div>
-            <div className="border border-white/5 p-3 rounded bg-white/5 backdrop-blur-sm">
-              <div className="uppercase tracking-widest text-[9px] text-gray-600 mb-1">LON</div>
-              {coords ? coords.longitude.toFixed(5) : '---'}
+            {/* Debug/Test Target Info */}
+            <div className="text-[9px] text-gray-800 tracking-widest uppercase opacity-0 transition-opacity hover:opacity-100">
+              Target: Beppu Tower
             </div>
-          </div>
-
-          {/* Debug info regarding target */}
-          <div className="text-[10px] text-gray-600 font-mono mt-4">
-            TARGET: BEPPU TOWER (TEST)
           </div>
         </div>
       )}
 
       {error && (
-        <div className="fixed top-0 left-0 w-full p-4 bg-red-900/80 text-white text-xs text-center backdrop-blur-md">
-          warning: {error}
+        <div className="fixed top-4 left-4 right-4 text-center">
+          <span className="text-[10px] text-red-900/50 bg-red-900/10 px-2 py-1 rounded">
+            {error}
+          </span>
         </div>
       )}
 
-      {/* Logs for debug */}
-      <div className="fixed bottom-0 left-0 w-full p-4 pointer-events-none fade-mask z-50">
-        <div className="flex flex-col-reverse items-start space-y-reverse space-y-1">
-          {log.map((l, i) => (
-            <div key={i} className="text-[9px] text-emerald-900 font-mono bg-emerald-100/10 px-1 rounded shadow-sm backdrop-blur-sm">
-              {l}
-            </div>
-          ))}
-        </div>
-      </div>
+      <style jsx global>{`
+        .writing-vertical-rl {
+          writing-mode: vertical-rl;
+          text-orientation: upright;
+        }
+        @keyframes fade-in-up {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up {
+            animation: fade-in-up 1s ease-out forwards;
+        }
+      `}</style>
     </div>
   );
 }
