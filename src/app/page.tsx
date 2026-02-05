@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Howl } from 'howler';
 import { AudioEngine } from '@/lib/AudioEngine';
 
 // Mock Target: Example (Beppu Station or a Shrine)

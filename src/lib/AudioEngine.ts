@@ -1,15 +1,14 @@
 export class AudioEngine {
     private static instance: AudioEngine;
-    private sound: Howl | null = null;
+    private context: AudioContext | null = null;
+    private oscillator: OscillatorNode | null = null;
+    private gainNode: GainNode | null = null;
+    private pannerNode: StereoPannerNode | null = null;
     private isPlaying: boolean = false;
     private debugLog: (msg: string) => void;
 
     private constructor(logFunc: (msg: string) => void) {
         this.debugLog = logFunc;
-        // In a real scenario, this would be a specific sound file (e.g. ambient drone or bell)
-        // For MVP, we'll try to generate a beep or load a placeholder if available.
-        // But Howler needs a file. We will use a base64 Data URI for a simple sine wave 
-        // to avoid asset dependency issues for this immediate step.
     }
 
     public static getInstance(logFunc: (msg: string) => void): AudioEngine {
@@ -20,74 +19,85 @@ export class AudioEngine {
     }
 
     public init() {
-        // A simple soft sine wave drone (base64 encoded MP3 or WAV would be ideal, but for synthesized sound we might need WebAudio API directly)
-        // Let's use Howler with a reliable test sound URL or base64. 
-        // Using a simple "white noise" or "drone" placeholder. 
-        // For now, let's use a public domain sound effect URL for testing "wind/atmosphere"
-
-        // URL: Small wind loop (example)
-        const TEST_AUDIO_URL = 'https://actions.google.com/sounds/v1/weather/rain_heavy_loud.ogg';
-
-        this.sound = new Howl({
-            src: [TEST_AUDIO_URL],
-            loop: true,
-            volume: 0, // Start silent
-            html5: true, // Force HTML5 Audio to allow streaming large files if needed
-            onload: () => this.debugLog('Audio: Loaded'),
-            onloaderror: (_id, err) => this.debugLog(`Audio Error: ${err}`)
-        });
-    }
-
-    public start() {
-        if (this.sound && !this.isPlaying) {
-            this.sound.play();
-            this.isPlaying = true;
-            this.debugLog('Audio: Started');
+        try {
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            this.context = new AudioContextClass();
+            this.debugLog('Audio: Context Created');
+        } catch (e) {
+            this.debugLog(`Audio Error: ${e}`);
         }
     }
 
-    /**
-     * Updates the audio based on the user's bearing relative to the target.
-     * @param heading User's compass heading (0-360)
-     * @param targetBearing Bearing to the target (0-360)
-     * @param distance Distance to target in meters
-     */
-    public update(heading: number, targetBearing: number, distance: number) {
-        if (!this.sound) return;
+    public start() {
+        if (!this.context) this.init();
+        if (!this.context) return;
 
-        // 1. Calculate angle difference (-180 to 180)
+        if (this.context.state === 'suspended') {
+            this.context.resume();
+        }
+
+        if (this.isPlaying) return;
+
+        try {
+            // Create Oscillator (Drone sound)
+            this.oscillator = this.context.createOscillator();
+            this.oscillator.type = 'sine'; // deeply resonant sine wave
+            this.oscillator.frequency.setValueAtTime(440, this.context.currentTime); // A4
+
+            // Create Gain (Volume)
+            this.gainNode = this.context.createGain();
+            this.gainNode.gain.setValueAtTime(0, this.context.currentTime); // Start silent
+
+            // Create Panner (Stereo)
+            this.pannerNode = this.context.createStereoPanner();
+
+            // Connect: Osc -> Gain -> Panner -> Destination
+            this.oscillator.connect(this.gainNode);
+            this.gainNode.connect(this.pannerNode);
+            this.pannerNode.connect(this.context.destination);
+
+            this.oscillator.start();
+            this.isPlaying = true;
+            this.debugLog('Audio: Started (Synth)');
+
+            // Fade in slightly
+            this.gainNode.gain.linearRampToValueAtTime(0.1, this.context.currentTime + 1);
+
+        } catch (e) {
+            this.debugLog(`Audio Start Error: ${e}`);
+        }
+    }
+
+    public update(heading: number, targetBearing: number, distance: number) {
+        if (!this.context || !this.gainNode || !this.pannerNode || !this.oscillator) return;
+
         let diff = targetBearing - heading;
         while (diff < -180) diff += 360;
         while (diff > 180) diff -= 360;
 
-        // 2. Spatial Audio Logic (Lite)
-        // If facing towards target (diff near 0), volume goes UP.
-        // If facing away, volume goes DOWN.
-        // Focus width: +/- 30 degrees is "loudest"
-
         const absDiff = Math.abs(diff);
-        let volume = 0;
 
+        // Volume Logic: Louder when facing target
+        // Max Volume: 0.5, Min Volume: 0.05
+        let targetVolume = 0.05;
         if (absDiff < 45) {
-            // Facing roughly towards target: Max Volume
-            volume = 1.0 - (absDiff / 45) * 0.3; // 1.0 to 0.7
-        } else {
-            // Facing away: Low Volume
-            volume = 0.1;
+            targetVolume = 0.5 - (absDiff / 45) * 0.45;
         }
 
-        // Distance attenuation (Optional for Step 1, but good for "getting closer")
-        // If very far (> 1km), sound is faint. If close (< 100m), sound is clear.
-        // mixing "Directional Volume" with "Distance Volume"
-        // For MVP: Let's focus PURELY on Direction to guide the user.
+        // Smooth transition
+        this.gainNode.gain.setTargetAtTime(targetVolume, this.context.currentTime, 0.1);
 
-        this.sound.fade(this.sound.volume(), volume, 100);
+        // Pitch modulation based on accuracy (optional, adds "game" feel)
+        // Higher pitch when closer/more accurate? 
+        // Let's keep pitch steady for now, maybe slight vibrato if accurate.
+        if (absDiff < 10) {
+            this.oscillator.frequency.setTargetAtTime(880, this.context.currentTime, 0.2); // Octave up when locked on
+        } else {
+            this.oscillator.frequency.setTargetAtTime(440, this.context.currentTime, 0.5);
+        }
 
-        // Stereo Panning (3D audio effect)
-        // If target is to the LEFT (negative diff), pan -1.
-        // If target is to the RIGHT (positive diff), pan 1.
-        // Clamp between -1.0 and 1.0
+        // Pan Logic
         const pan = Math.max(-1.0, Math.min(1.0, diff / 90));
-        this.sound.stereo(pan);
+        this.pannerNode.pan.setTargetAtTime(pan, this.context.currentTime, 0.1);
     }
 }
