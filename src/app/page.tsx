@@ -24,6 +24,7 @@ export default function Home() {
   // Navigation State
   const [waypoints, setWaypoints] = useState<{ lat: number; lon: number }[]>([]);
   const [currentWaypointIndex, setCurrentWaypointIndex] = useState(0);
+  const lastFetchTimeRef = useRef<number>(0);
 
   // Audio State
   const [audioStarted, setAudioStarted] = useState(false);
@@ -99,9 +100,14 @@ export default function Home() {
     return R * c;
   };
 
-  const fetchRoute = async (startLat: number, startLon: number) => {
+  const fetchRoute = async (startLat: number, startLon: number, isReroute = false) => {
+    const now = Date.now();
+    // Throttle: Max one fetch every 15 seconds
+    if (now - lastFetchTimeRef.current < 15000) return;
+    lastFetchTimeRef.current = now;
+
     try {
-      addLog('fetching route...');
+      addLog(isReroute ? 'rerouting...' : 'fetching route...');
       const url = `https://router.project-osrm.org/route/v1/walking/${startLon},${startLat};${TARGET_LON},${TARGET_LAT}?steps=true&overview=full&geometries=geojson`;
       const res = await fetch(url);
       const data = await res.json();
@@ -114,7 +120,7 @@ export default function Home() {
         }));
         setWaypoints(newWaypoints);
         setCurrentWaypointIndex(0);
-        addLog(`Route Found: ${newWaypoints.length} steps`);
+        addLog(isReroute ? 'Route Updated' : `Route Found: ${newWaypoints.length} steps`);
       }
     } catch (e) {
       addLog(`Route Error: ${e}`);
@@ -149,6 +155,8 @@ export default function Home() {
     }
   };
 
+  const minDistRef = useRef<number>(Infinity);
+
   useEffect(() => {
     if (!permissionGranted) return;
 
@@ -169,19 +177,33 @@ export default function Home() {
           };
         });
 
-        // Check proximity to current waypoint
+        // Navigation Logic
         if (waypoints.length > 0 && currentWaypointIndex < waypoints.length) {
           const currentDest = waypoints[currentWaypointIndex];
           const dist = calculateDistance(newLat, newLon, currentDest.lat, currentDest.lon);
 
-          // If within 10 meters, move to next waypoint
+          // 1. Waypoint reached? (within 10m)
           if (dist < 10) {
             if (currentWaypointIndex < waypoints.length - 1) {
-              addLog('Waypoint reached. Next...');
+              addLog('Way reached. Next...');
             } else {
               addLog('Final stretch...');
             }
             setCurrentWaypointIndex(prev => prev + 1);
+            minDistRef.current = Infinity; // Reset for next waypoint
+          }
+          // 2. Deviation detection?
+          else {
+            // Update minimum distance seen for this waypoint
+            if (dist < minDistRef.current) {
+              minDistRef.current = dist;
+            }
+            // If we are getting significantly further away than the closest we've been
+            // (e.g., 25m further than the minimum distance we achieved)
+            if (dist > minDistRef.current + 25) {
+              fetchRoute(newLat, newLon, true);
+              minDistRef.current = dist; // Reset min to current after reroute
+            }
           }
         }
 
