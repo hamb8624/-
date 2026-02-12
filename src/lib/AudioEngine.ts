@@ -135,6 +135,41 @@ export class AudioEngine {
         this.debugLog('Audio: Drone Stopped');
     }
 
+    private playWaypoint() {
+        if (!this.context) return;
+
+        const now = this.context.currentTime;
+
+        // Waypoint (Hyoshigi/Woodblock) - Short, dry, sharp
+        const osc = this.context.createOscillator();
+        const gain = this.context.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(800, now);
+        osc.frequency.exponentialRampToValueAtTime(200, now + 0.05);
+
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+        osc.connect(gain).connect(this.context.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.1);
+
+        // Double tap for clarity
+        const osc2 = this.context.createOscillator();
+        const gain2 = this.context.createGain();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(800, now + 0.15);
+        osc2.frequency.exponentialRampToValueAtTime(200, now + 0.2);
+        gain2.gain.setValueAtTime(0, now);
+        gain2.gain.setValueAtTime(0.3, now + 0.15);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+        osc2.connect(gain2).connect(this.context.destination);
+        osc2.start(now + 0.15);
+        osc2.stop(now + 0.25);
+    }
+
     private playSparkle() {
         if (!this.context) return;
 
@@ -181,9 +216,26 @@ export class AudioEngine {
         }
     }
 
-    public update(heading: number, targetBearing: number, distance: number) {
+    public update(heading: number, targetBearing: number, waypointBearing: number | null) {
         if (!this.context) return;
 
+        const now = Date.now();
+        if (now - this.lastTriggerTime < 2000) return;
+
+        // 1. Check Waypoint first (if any)
+        if (waypointBearing !== null) {
+            let diff = waypointBearing - heading;
+            while (diff < -180) diff += 360;
+            while (diff > 180) diff -= 360;
+
+            if (Math.abs(diff) < 15) {
+                this.playWaypoint();
+                this.lastTriggerTime = now;
+                return; // Prioritize waypoint guidance
+            }
+        }
+
+        // 2. Check Final Destination
         let diff = targetBearing - heading;
         while (diff < -180) diff += 360;
         while (diff > 180) diff -= 360;
@@ -192,13 +244,8 @@ export class AudioEngine {
 
         // Trigger logic: If within 15 degrees
         if (absDiff < 15) {
-            const now = Date.now();
-            // Cooldown: 2 seconds
-            if (now - this.lastTriggerTime > 2000) {
-                this.playSparkle();
-                this.lastTriggerTime = now;
-                // Optional: visual feedback trigger could be sent back via callback if needed
-            }
+            this.playSparkle();
+            this.lastTriggerTime = now;
         }
     }
 }

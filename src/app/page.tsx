@@ -21,6 +21,10 @@ export default function Home() {
   // Smoothing state
   const headingRef = useRef<number | null>(null);
 
+  // Navigation State
+  const [waypoints, setWaypoints] = useState<{ lat: number; lon: number }[]>([]);
+  const [currentWaypointIndex, setCurrentWaypointIndex] = useState(0);
+
   // Audio State
   const [audioStarted, setAudioStarted] = useState(false);
   const audioRef = useRef<AudioEngine | null>(null);
@@ -65,8 +69,7 @@ export default function Home() {
   }, []);
 
   const addLog = (msg: string) => {
-    // Suppress logs to avoid clutter during smooth mode
-    // setLog(prev => [msg, ...prev].slice(0, 5));
+    setLog(prev => [msg, ...prev].slice(0, 5));
   };
 
   const calculateBearing = (startLat: number, startLon: number, destLat: number, destLon: number) => {
@@ -81,6 +84,41 @@ export default function Home() {
     let brng = Math.atan2(y, x);
     brng = brng * (180 / Math.PI);
     return (brng + 360) % 360;
+  };
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3; // meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) *
+      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const fetchRoute = async (startLat: number, startLon: number) => {
+    try {
+      addLog('fetching route...');
+      const url = `https://router.project-osrm.org/route/v1/walking/${startLon},${startLat};${TARGET_LON},${TARGET_LAT}?steps=true&overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.routes && data.routes[0]) {
+        const steps = data.routes[0].legs[0].steps;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const newWaypoints = steps.map((step: any) => ({
+          lat: step.maneuver.location[1],
+          lon: step.maneuver.location[0]
+        }));
+        setWaypoints(newWaypoints);
+        setCurrentWaypointIndex(0);
+        addLog(`Route Found: ${newWaypoints.length} steps`);
+      }
+    } catch (e) {
+      addLog(`Route Error: ${e}`);
+    }
   };
 
   const requestPermission = async () => {
@@ -117,10 +155,36 @@ export default function Home() {
     // GPS
     const geoId = navigator.geolocation.watchPosition(
       (position) => {
-        setCoords({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
+        const newLat = position.coords.latitude;
+        const newLon = position.coords.longitude;
+
+        setCoords(prev => {
+          // Initial fetch
+          if (prev === null) {
+            fetchRoute(newLat, newLon);
+          }
+          return {
+            latitude: newLat,
+            longitude: newLon,
+          };
         });
+
+        // Check proximity to current waypoint
+        if (waypoints.length > 0 && currentWaypointIndex < waypoints.length) {
+          const currentDest = waypoints[currentWaypointIndex];
+          const dist = calculateDistance(newLat, newLon, currentDest.lat, currentDest.lon);
+
+          // If within 10 meters, move to next waypoint
+          if (dist < 10) {
+            if (currentWaypointIndex < waypoints.length - 1) {
+              addLog('Waypoint reached. Next...');
+            } else {
+              addLog('Final stretch...');
+            }
+            setCurrentWaypointIndex(prev => prev + 1);
+          }
+        }
+
         setError(''); // Clear error on success
       },
       (err) => {
@@ -152,11 +216,6 @@ export default function Home() {
 
       // Store raw value for smoothing loop
       headingRef.current = headingValue;
-
-      // Update Audio Engine (using the RAW value is fine, but audio also benefits from smooth updates relative to head.
-      // Actually, for audio physics, updating on every frame (in the loop) is better.
-      // But for MVP, let's keep audio update here or move to animate loop?
-      // Let's move Audio Update to the animation loop if coords exist.
     };
 
     window.addEventListener('deviceorientation', handleOrientation, true);
@@ -165,20 +224,32 @@ export default function Home() {
       navigator.geolocation.clearWatch(geoId);
       window.removeEventListener('deviceorientation', handleOrientation, true);
     };
-  }, [permissionGranted]);
+  }, [permissionGranted, waypoints, currentWaypointIndex]);
 
   // Sync Audio in Loop (Pseudo-effect: we use a separate effect that depends on `heading` state which is now smooth)
   useEffect(() => {
     if (coords && audioRef.current && heading !== null) {
-      const targetBearing = calculateBearing(
+      const finalDestBearing = calculateBearing(
         coords.latitude,
         coords.longitude,
         TARGET_LAT,
         TARGET_LON
       );
-      audioRef.current.update(heading, targetBearing, 1000);
+
+      let waypointBearing: number | null = null;
+      if (waypoints.length > 0 && currentWaypointIndex < waypoints.length) {
+        const wp = waypoints[currentWaypointIndex];
+        waypointBearing = calculateBearing(
+          coords.latitude,
+          coords.longitude,
+          wp.lat,
+          wp.lon
+        );
+      }
+
+      audioRef.current.update(heading, finalDestBearing, waypointBearing);
     }
-  }, [heading, coords]);
+  }, [heading, coords, waypoints, currentWaypointIndex]);
 
   if (!isClient) return <div className="min-h-screen bg-black" />;
 
